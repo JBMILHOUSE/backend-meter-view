@@ -1,0 +1,19 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Leitura 
+model Measure {
+  id               Int      @id @default(autoincrement())
+  customer_code    String
+  measure_datetime DateTime
+  measure_type     String
+  has_confirmed    Boolean  @default(false)
+  confirmed_value  Int?
+  image_url        String   @unique
+}
