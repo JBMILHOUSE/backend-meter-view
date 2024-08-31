@@ -9,11 +9,16 @@ datasource db {
 
 // Leitura 
 model Measure {
-  id               Int      @id @default(autoincrement())
-  customer_code    String
-  measure_datetime DateTime
-  measure_type     String
-  has_confirmed    Boolean  @default(false)
-  confirmed_value  Int?
-  image_url        String   @unique
+  id               Int      @id @default(autoincrement()) // id auto incremento
+  customer_code    String // código do cliente
+  measure_datetime DateTime // Data e hora da medição.
+  measure_type     String // tipo da medição (Agua ou gas)
+  measure_value    Int? // Valor numérico extraído da imagem 
+  confirmed        Boolean  @default(false) // se medicao já foi confirmada
+  has_confirmed    Int? // valor para armazenar o valor valor confirmado
+  image_url        String   @unique // URL da imagem armazenada (pode ser um link temporário ou permanente).
+  created_at       DateTime // Data e hora de criação do registro.
+  update_at        DateTime
+
+  @@map("measures")
 }
