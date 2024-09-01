@@ -1,93 +1,67 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager } from "@google/generative-ai/server";
-import { env } from "../env";
+import { readFileSync } from 'fs';
 import path from 'path';
-import { v4 as uuidv4 } from 'uuid'
-import fs from 'fs';
+import { env } from "../env";
+import { ClientError } from '../errors/client-error';
+import { prisma } from './prisma';
+import fs from 'fs'
 
 // Initialize GoogleAIFileManager with your API_KEY.
 const geradorIA = new GoogleGenerativeAI(env.API_KEY);
-export const fileManager = new GoogleAIFileManager(env.API_KEY);
+const fileManager = new GoogleAIFileManager(env.API_KEY);
 
-// Função que faz upload de um arquivo para o Gemini
-export async function enviarParaGemini(imagemBase64: string, nomeExibicao: string) {  
-    
-    // Decodificar a imagem base64 para um Buffer
-    const buffer = Buffer.from(imagemBase64, 'base64');
-    
-    // Criar um caminho temporário para salvar o arquivo
-    const caminhoTemporario = path.join(__dirname, `temp_${uuidv4()}.jpg`);
-    
-    // Salvar o Buffer como um arquivo temporário
-    fs.writeFileSync(caminhoTemporario, buffer);
-
-    try {
-        const fileType = await import('file-type');
-        // Determinar o tipo MIME usando a biblioteca file-type
-        const tipo = await fileType.fileTypeFromBuffer(buffer);
-
-        const resultadoUpload = await fileManager.uploadFile("conta-sincred.png", {
-            mimeType: tipo?.mime || 'image/png', // Usar o tipo inferido ou um padrão
-            displayName: nomeExibicao,
-        });
-
-        const arquivo = resultadoUpload.file;
-        console.log(`Arquivo enviado ${arquivo.displayName} como: ${arquivo.name}`);
-        return arquivo.uri;
-    } catch (error) {
-        console.error('Erro ao enviar arquivo:', error);
-        // Adicionar tratamento de erro personalizado aqui
-        throw error;
-    } finally {
-        // Remover o arquivo temporário
-        fs.unlinkSync(caminhoTemporario);
-    }
-}
-  
-// Função para extrair o valor da imagem usando a IA do Gemini
-export async function extrairValorDaImagem(uriArquivo: string): Promise<number> {
-    const modelo = geradorIA.getGenerativeModel({
-        model: "gemini-1.5-flash",
-    });
-
-    const configuracaoGeracao = {
-        temperature: 0.9,
-        topP: 0.95,
-        topK: 64,
-        maxOutputTokens: 1024,
-        responseMimeType: "text/plain",
-    };
-
-    const partes = [
-        { text: "Descreve a imagem." },
-        // { text: "Tipo da conta." },
-        // { text: "Data da próxima leitura." },
-        {
-            fileData: {
-                mimeType: uriArquivo.split('.').pop()?.toLowerCase() || 'application/octet-stream',
-                fileUri: uriArquivo,
-            },
-        },
-    ];
-
+export const processAndStoreImage = async(imageName: string, customerCode: string, measureType: string, measureDatetime: Date) => {
    try {
-    const resultado = await modelo.generateContent({
-        contents: [{ role: "user", parts: partes }],
-        generationConfig: configuracaoGeracao,
-    });
+      //caminho completo da imagem
+      const imagePath = path.join(__dirname, '..', '..', imageName)
+      const imageBuffer = readFileSync(imageName)
 
-    const textoExtraido = resultado.response.text()
+      // Verificar se o arquivo existe antes de lê-lo
+      if (!fs.existsSync(imagePath) || !fs.statSync(imagePath).isFile()) {
+        throw new ClientError(`O arquivo ${imagePath} não existe ou não é um arquivo.`);
+      }
 
-    const valorNumerico = parseFloat(textoExtraido.replace(/\D/g, ''))
+      // Fazendo upload da imagem para o Gemini AI
+      const uploadResult = await fileManager.uploadFile(imagePath, {
+        mimeType: 'image/jpeg',
+        displayName: imageName,
+      });
+      
+      console.log(`Enviando arquivo ${uploadResult.file.displayName} de ${uploadResult.file.uri}`)
 
-    if (isNaN(valorNumerico)) {
-        throw new Error('Não foi possível extrair um valor numérico válido da imagem.');
-    }
+      // Gerando conteúdo
+      const model = geradorIA.getGenerativeModel({ model: 'gemini-1.5-flash'})
+      const result = await model.generateContent([
+        'Descreva a imagem',
+        {
+          fileData: {
+            fileUri: uploadResult.file.uri,
+            mimeType: uploadResult.file.mimeType
+          },
+        },
+      ]);
 
-    return valorNumerico;
+      const extractedValue = result.response.text();
 
+      // Armazenando os resultados no banco de dados usando prisma
+      const storeMeasure = await prisma.measure.create({
+        data: {
+          customer_code: customerCode,
+          measure_datetime: measureDatetime,
+          measure_type: measureType,
+          measure_value: parseFloat(extractedValue),
+          has_confirmed: false,
+          image_url: uploadResult.file.uri,
+        },
+      });
+
+      console.log('Stored Measure: ', storeMeasure);
+      return storeMeasure
+      
    } catch (error) {
-    console.error('Erro ao extrair valor da imagem:', error);
-    throw new Error('Erro ao processar a imagem.');
+     console.log(error);
+    
+     throw new ClientError('Erro ao processar e armazenar a imagem.');
    }
 }
