@@ -33,7 +33,7 @@ export const processAndStoreImage = async(imageName: string, customerCode: strin
       // Gerando conteúdo
       const model = geradorIA.getGenerativeModel({ model: 'gemini-1.5-flash'})
       const result = await model.generateContent([
-        'Descreva a imagem',
+        'Extraia o valor numérico total da leitura no medidor desta imagem.',
         {
           fileData: {
             fileUri: uploadResult.file.uri,
@@ -42,7 +42,15 @@ export const processAndStoreImage = async(imageName: string, customerCode: strin
         },
       ]);
 
-      const extractedValue = result.response.text();
+      const extractedText = result.response.text();
+
+      // 
+      const match = extractedText.match(/(\d+(\.\d+)?)/)
+      const extractedValue = match ? parseFloat(match[0]) : null
+
+      if(extractedValue === null) {
+        throw new ClientError('Não foi possível extrair o valor númerico da imagem.')
+      }
 
       // Armazenando os resultados no banco de dados usando prisma
       const storeMeasure = await prisma.measure.create({
@@ -50,7 +58,7 @@ export const processAndStoreImage = async(imageName: string, customerCode: strin
           customer_code: customerCode,
           measure_datetime: measureDatetime,
           measure_type: measureType,
-          measure_value: parseFloat(extractedValue),
+          measure_value: extractedValue,
           has_confirmed: false,
           image_url: uploadResult.file.uri,
         },

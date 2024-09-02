@@ -25,7 +25,7 @@ export async function changeConfirm(app: FastifyInstance) {
         throw new ClientError('Medição não encontrada')
       }
   
-      if(isMeasure.measure_value) {
+      if(isMeasure.has_confirmed) {
          throw new ClientError('Medição já foi confirmada')
       }
   
@@ -39,7 +39,8 @@ export async function changeConfirm(app: FastifyInstance) {
   
       return reply.send({ sucess: true })
     } catch (error) {
-       throw new ClientError('Erro ao confirmar a medição')
+      console.log(error)
+      throw new ClientError('Erro ao confirmar a medição')
     }
   })
 }
